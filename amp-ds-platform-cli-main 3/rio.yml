@@ -1,0 +1,120 @@
+schemaVersion: 2.0
+
+pipelines:
+  # pull request build
+  - branchRules:
+      includePatterns:
+        - main
+        - develop
+        - 'bugfix*'
+        - 'feature*'
+        - 'release*'
+    machine:
+      baseImage: docker.apple.com/base-images/ubi9/ubi-builder:latest
+      env:
+        PYTHON_VERSION: python-3.10.9-1
+        RUNTIME_JDK_VERSION: 'jdk-11.0.4-applejdk-11.4-1'
+        PYTEST_PATH: ".out/test-results/pytest"
+        FLAKE_PATH: ".out/test-results-sonar/flake8"
+        COVERAGE_PATH: ".out/test-results-sonar/coverage"
+        SONAR_PROJECT_KEY: amp-ds-platform-cli
+    secrets:
+      names:
+        - sonar_token
+    build:
+      template: freestyle:v4:prb
+      steps:
+        - eval $(ci install-runtime ${PYTHON_VERSION} ${RUNTIME_JDK_VERSION})
+        - python -m venv .venv/build && source .venv/build/bin/activate
+        - python -m pip install --upgrade pip
+        - pip config set global.index-url https://pypi.apple.com/simple
+        - pip install build twine setuptools wheel bumpversion toml
+        - python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])"
+        - pip install -e ".[dev,test]"
+        - mkdir -p .out/test-results/mypy
+        - mkdir -p $PYTEST_PATH
+        - mkdir -p $COVERAGE_PATH
+        - mkdir -p $FLAKE_PATH
+        - flake8 amp_ds_platform_cli tests --format junit-xml --exit-zero --output-file $FLAKE_PATH/amp_ds_platform_cli.xml
+        - pytest tests --junitxml=$PYTEST_PATH/pytest.xml --cov --cov-report=xml:$COVERAGE_PATH/coverage.xml
+        - run_sonarqube --project_key $SONAR_PROJECT_KEY --pytest_report_path $PYTEST_PATH/pytest.xml --flake_report_path $FLAKE_PATH/amp_ds_platform_cli.xml --coverage_report_path $COVERAGE_PATH/coverage.xml
+        - mypy --strict amp_ds_platform_cli --enable-incomplete-feature=Unpack --junit-xml=.out/test-results/mypy/mypy.xml
+        - python -m build --wheel
+        - python CI/ci_checks.py
+
+  # develop branch build
+  - group: dev
+    branchRules:
+      includePatterns:
+        - develop
+        - bugfix.*
+        - feature.*
+        - release.*
+    machine:
+      baseImage: docker.apple.com/base-images/ubi9/ubi-builder:latest
+      env:
+        PYTHON_VERSION: python-3.10.9-1
+        RUNTIME_JDK_VERSION: 'jdk-11.0.4-applejdk-11.4-1'
+    build:
+      template: freestyle:v4:publish
+      steps:
+        - eval $(ci install-runtime ${PYTHON_VERSION} ${RUNTIME_JDK_VERSION})
+        - python -m venv .venv/build && source .venv/build/bin/activate
+        - python -m pip install --upgrade pip
+        - pip config set global.index-url https://pypi.apple.com/simple
+        - pip install build twine setuptools wheel bumpversion toml
+        - CURRENT_VERSION=$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
+        - NEW_VERSION=$(bumpversion --current-version $CURRENT_VERSION patch --dry-run --list | grep "new_version" | cut -d "=" -f 2)
+        - TIMESTAMP=$(date +'%Y%m%d%H%M%S')
+        - DEV_VERSION="${NEW_VERSION}.dev${TIMESTAMP}"
+        - sed -i "s/version = .*/version = \"${DEV_VERSION}\"/" pyproject.toml
+        - pip install -e ".[dev,test]"
+        - pytest
+        - mypy --strict amp_ds_platform_cli --enable-incomplete-feature=Unpack
+        - python -m build --wheel
+        - WHL_PKG=$(find dist/*$version*.whl)
+        - dev_version=$(echo $WHL_PKG | cut -d '-' -f 2)
+        - ci stage-lib "$WHL_PKG,amp-ds-platform-cli/$dev_version/"
+    package:
+      freeform:
+        - publish:
+            - repo: pypi-apple
+
+  # main branch build
+  - branchName: main
+    machine:
+      baseImage: docker.apple.com/base-images/ubi9/ubi-builder:latest
+      env:
+        PYTHON_VERSION: python-3.10.9-1
+        PYTHON_USE_PEP517: true
+        RUNTIME_JDK_VERSION: 'jdk-11.0.4-applejdk-11.4-1'
+        PYTEST_PATH: ".out/test-results/pytest"
+        COVERAGE_PATH: ".out/test-results-sonar/coverage"
+        SONAR_PROJECT_KEY: amp-ds-platform-cli
+    secrets:
+      names:
+        - sonar_token
+    build:
+      template: freestyle:v4:publish
+      steps:
+        - eval $(ci install-runtime ${PYTHON_VERSION} ${RUNTIME_JDK_VERSION})
+        - python -m venv .venv/build && source .venv/build/bin/activate
+        - python -m pip install --upgrade pip
+        - pip config set global.index-url https://pypi.apple.com/simple
+        - pip install build twine setuptools wheel toml
+        - CURRENT_VERSION=$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
+        - sed -i "s/version = .*/version = \"${CURRENT_VERSION}\"/" pyproject.toml
+        - pip install -e ".[dev,test]"
+        - mkdir -p $PYTEST_PATH
+        - mkdir -p $COVERAGE_PATH
+        - pytest tests --junitxml=$PYTEST_PATH/pytest.xml --cov --cov-report=xml:$COVERAGE_PATH/coverage.xml
+        - run_sonarqube --project_key $SONAR_PROJECT_KEY --pytest_report_path $PYTEST_PATH/pytest.xml --coverage_report_path $COVERAGE_PATH/coverage.xml
+        - mypy --strict amp_ds_platform_cli --enable-incomplete-feature=Unpack
+        - python -m build --wheel
+        - WHL_PKG=$(find dist/*$version*.whl)
+        - main_version=$(echo $WHL_PKG | cut -d '-' -f 2)
+        - ci stage-lib "$WHL_PKG,amp-ds-platform-cli/$main_version/"
+    package:
+      freeform:
+        - publish:
+            - repo: pypi-apple

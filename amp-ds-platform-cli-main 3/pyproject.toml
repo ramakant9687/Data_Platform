@@ -1,0 +1,87 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "apple-amp-ds-platform-cli"
+version = "0.0.5"
+description = "A CLI Tool used to create and manage Spark Jobs and Data Pipelines"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Proprietary"}
+authors = [{name = "AMP DS&A Platform Eng Team", email = "amp-ds-platform-team@group.apple.com"}]
+dependencies = [
+    "toml==0.10.2",
+    "typer==0.12.5",
+    "ruamel.yaml==0.17.32",
+    "apple-amp-ds-platform-library==0.1.18"
+]
+
+[project.scripts]
+pcli = "amp_ds_platform_cli.main:app"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=3.0",
+    "tox>=4.0"
+]
+dev = [
+    "black>=22.0",
+    "isort>=5.0",
+    "mypy>=0.9",
+    "flake8>=6.0.0",
+    "flake8-docstrings>=1.7.0",
+    "flake8-import-order>=0.18.2",
+    "Flake8-pyproject",
+    "pre-commit>=2.0",
+    "typer==0.12.5",
+    "ruamel.yaml==0.17.32",
+    "apple-amp-ds-platform-library==0.1.18"
+]
+
+[tool.black]
+line-length = 120
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
+line_length = 120
+multi_line_output = 3
+
+[tool.flake8]
+max-line-length = 120
+max-complexity = 10
+docstring-convention = "google"
+import-order-style = "google"
+application-import-names = ["my_project"]
+exclude = [
+    ".git",
+    ".tox",
+    "__pycache__",
+    "build",
+    "dist",
+    "*.egg-info",
+    ".venv",
+    "venv",
+    "CI"
+]
+ignore = [
+    "D100",
+    "D101",
+    "D104",
+    "D107",
+    "S",
+    "W291",
+    "W292",
+]
+
+[tool.semantic_release]
+version_variable = "pyproject.toml:project.version"
+branch = "develop"
+upload_to_pypi = false
+build_command = "python -m build"
+commit_message = "chore: bump version to {version}"
+
+[tool.setuptools]
+packages=["amp_ds_platform_cli", "amp_ds_platform_cli.authentication", "amp_ds_platform_cli.job"]
